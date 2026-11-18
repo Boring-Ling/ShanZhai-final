@@ -1,0 +1,16 @@
+MediaPipe Tasks Vision 0.10.21, Google LLC, Apache License 2.0.
+https://github.com/google-ai-edge/mediapipe
+https://www.npmjs.com/package/@mediapipe/tasks-vision/v/0.10.21
+
+vision_bundle.js preserves the upstream bundle with its final ESM export adapted
+to self.vision in an isolated function, for classic-worker WASM initialization.
+
+Face mesh UVs and triangle indices are derived from MediaPipe's
+mediapipe/modules/face_geometry/data/canonical_face_model.obj.
+
+face_landmarker.task:
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+selfie_multiclass.tflite:
+https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
+
+All inference happens in this browser. Camera frames stay in local memory.
