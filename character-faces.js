@@ -1,29 +1,26 @@
 // The selector and the live effect share the same approved character artwork.
 // Points below are measured on the source PNGs in normalized image coordinates.
 export const CHARACTER_FACES = {
-  chiikawa: { leftEye: [.35, .40], rightEye: [.61, .45], crown: .17, chin: .89, width: .83, headCenter: .48 },
-  hachiware: { leftEye: [.34, .55], rightEye: [.58, .55], crown: .28, chin: .83, width: .77, headCenter: .49 },
-  usagi: { leftEye: [.36, .65], rightEye: [.54, .64], crown: .34, chin: .90, width: .63, headCenter: .48 },
+  chiikawa: { leftEye: [.35, .40], rightEye: [.61, .45], crown: .17, chin: .89, width: .83, artCenter: .48, coverHair: true },
+  hachiware: { leftEye: [.34, .55], rightEye: [.58, .55], crown: .28, chin: .83, width: .77, artCenter: .49, coverHair: true },
+  usagi: { leftEye: [.36, .65], rightEye: [.54, .64], crown: .34, chin: .90, width: .63, artCenter: .48, coverHair: true },
   lulu: { leftEye: [.407, .425], rightEye: [.637, .382], crown: .27, chin: .83, width: .70,
     artCenter: .51, firstPaint: [[.345, .505], [.70, .58]] },
 };
 
 const SIZE = 256;
 export const FIRST_PAINT_PROGRESS = .025;
-const FACE_OUTLINE = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+export const FACE_OUTLINE = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
   152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-function fitLulu(alpha, face, localX, localY, cheekCenter, targetChin, design, baseSize) {
-  const outline = FACE_OUTLINE.map(index => [localX(face[index]), targetChin - localY(face[index])]);
+export function fitFaceSize(outline, baseSize, covers) {
   let bestSize = baseSize, fewestMisses = Infinity;
   for (let step = 0; step <= 22; step++) {
     const size = baseSize * (1 + step * .025);
     let misses = 0;
     for (const [across, fromChin] of outline) {
-      const u = Math.floor((design.artCenter - (across - cheekCenter) / size) * SIZE);
-      const v = Math.floor((design.chin - fromChin / size) * SIZE);
-      if (u < 0 || u >= SIZE || v < 0 || v >= SIZE || alpha[(v * SIZE + u) * 4 + 3] < 240) misses++;
+      if (!covers(across / size, fromChin / size)) misses++;
     }
     if (misses === 0) return size;
     if (misses < fewestMisses) {
@@ -69,7 +66,11 @@ function buildArrivalMap(design) {
   const map = new Float32Array(SIZE * SIZE);
   const height = design.chin - design.crown;
   const center = (design.leftEye[0] + design.rightEye[0]) / 2;
-  const firstPaint = design.firstPaint ?? [];
+  const firstPaint = design.firstPaint ?? [
+    [design.leftEye[0] - design.width * .09, design.leftEye[1] + height * .14],
+    [design.rightEye[0] + design.width * .09, design.rightEye[1] + height * .35],
+  ];
+  const cheekSpread = design.firstPaint ? .88 : .78;
   for (let row = 0; row < SIZE; row++) {
     for (let col = 0; col < SIZE; col++) {
       const x = (col + 0.5) / SIZE;
@@ -87,7 +88,7 @@ function buildArrivalMap(design) {
       const texture = .022 * Math.sin(x * 58 + y * 21) * Math.cos(y * 61 - x * 32);
       let arrival = .12 + .79 * distance + .22 * rim * rim + texture;
       for (const [seedX, seedY] of firstPaint) {
-        const spread = .027 + .88 * Math.hypot((x - seedX) * 1.3, (y - seedY) * 1.5);
+        const spread = .027 + cheekSpread * Math.hypot((x - seedX) * 1.3, (y - seedY) * 1.5);
         arrival = Math.min(arrival, spread + texture * .2);
       }
       // Reserve the real eyes until the paint around them has spread.
@@ -102,7 +103,7 @@ function buildArrivalMap(design) {
         const blend = clamp((.15 - v) / .10, 0, 1);
         arrival += (earArrival - arrival) * blend;
       }
-      map[row * SIZE + col] = clamp(arrival, design.firstPaint ? FIRST_PAINT_PROGRESS : .09, .965);
+      map[row * SIZE + col] = clamp(arrival, FIRST_PAINT_PROGRESS, .965);
     }
   }
   return map;
@@ -129,8 +130,8 @@ export class CharacterFaces {
       source = { image, map: buildArrivalMap(design) };
       this.images.set(group, source);
     }
-    if (progress < (design.firstPaint ? FIRST_PAINT_PROGRESS : .085) || !source.image.complete || !source.image.naturalWidth) return null;
-    if (design.firstPaint && !source.alpha) {
+    if (progress < FIRST_PAINT_PROGRESS || !source.image.complete || !source.image.naturalWidth) return null;
+    if (!source.alpha) {
       const ctx = this.frameContext;
       ctx.clearRect(0, 0, SIZE, SIZE);
       ctx.drawImage(source.image, 0, 0, SIZE, SIZE);
@@ -159,7 +160,8 @@ export class CharacterFaces {
     return this.frame;
   }
 
-  draw(ctx, image, face, design, width, height, progress, skin) {
+  draw(ctx, image, face, group, width, height, progress, skin) {
+    const design = CHARACTER_FACES[group];
     const eye = (a, b) => ({ x: (face[a].x + face[b].x) * width / 2, y: (face[a].y + face[b].y) * height / 2 });
     const left = eye(33, 133), right = eye(362, 263);
     const centerX = (left.x + right.x) / 2;
@@ -174,7 +176,7 @@ export class CharacterFaces {
     const sourceX = (design.leftEye[0] + design.rightEye[0]) / 2;
     const sourceY = (design.leftEye[1] + design.rightEye[1]) / 2;
     const baseSize = faceWidth * 1.24 / design.width;
-    const targetChin = chin + faceWidth * (design.firstPaint ? .055 : .015);
+    const targetChin = chin + faceWidth * .055;
     // Early paint follows the real eyes. Settle the nearly complete character
     // onto the jaw by translating the artwork at its original proportions.
     const settle = clamp((progress - .48) / .35, 0, 1);
@@ -182,15 +184,19 @@ export class CharacterFaces {
     let size = baseSize;
     let anchorX = sourceX;
     let offsetX = 0;
-    if (design.headCenter && smooth > 0) {
-      const pose = { x: centerX, y: centerY, cosine, sine, faceWidth };
-      size += (fitHead(skin, { width, height }, pose, design, baseSize, localY(face[10]), targetChin) - size) * smooth;
-      anchorX += (design.headCenter - sourceX) * smooth;
-    }
-    const luluAlpha = design.firstPaint ? this.images.get('lulu')?.alpha : null;
-    if (luluAlpha && smooth > 0) {
+    if (smooth > 0) {
+      const alpha = this.images.get(group).alpha;
       const cheekCenter = (localX(face[234]) + localX(face[454])) / 2;
-      size += (fitLulu(luluAlpha, face, localX, localY, cheekCenter, targetChin, design, baseSize) - size) * smooth;
+      const outline = FACE_OUTLINE.map(index => [localX(face[index]) - cheekCenter, targetChin - localY(face[index])]);
+      const minimum = design.coverHair
+        ? fitHead(skin, { width, height }, { x: centerX, y: centerY, cosine, sine, faceWidth }, design, baseSize, localY(face[10]), targetChin)
+        : baseSize;
+      const fitted = fitFaceSize(outline, minimum, (across, fromChin) => {
+        const u = Math.floor((design.artCenter - across) * SIZE);
+        const v = Math.floor((design.chin - fromChin) * SIZE);
+        return u >= 0 && u < SIZE && v >= 0 && v < SIZE && alpha[(v * SIZE + u) * 4 + 3] >= 240;
+      });
+      size += (fitted - size) * smooth;
       anchorX += (design.artCenter - sourceX) * smooth;
       offsetX = cheekCenter * smooth;
     }

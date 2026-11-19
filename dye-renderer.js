@@ -1,4 +1,4 @@
-import { CHARACTER_FACES, CharacterFaces } from './character-faces.js?v=lulu-face-fit-2';
+import { CHARACTER_FACES, CharacterFaces, FACE_OUTLINE, FIRST_PAINT_PROGRESS, fitFaceSize } from './character-faces.js?v=pool-face-sync-1';
 
 const vertexSource = `
 attribute vec2 position;
@@ -68,9 +68,16 @@ float featureHole(vec4 feature) {
   return 1.0 - smoothstep(0.74, 1.08, length((faceUV - feature.xy) / feature.zw));
 }
 void main() {
-  float faceSkin = texture2D(skinTexture, videoUV).g;
-  float dye = spread(faceUV, min(progress / 0.88, 1.0));
-  dye *= faceSkin * faceVisible * step(0.001, progress);
+  float finish = smoothstep(0.40, 0.73, progress);
+  float faceSkin = mix(texture2D(skinTexture, videoUV).g, 1.0, finish);
+  float t = clamp((progress - ${FIRST_PAINT_PROGRESS}) / (1.0 - ${FIRST_PAINT_PROGRESS}), 0.0, 1.0);
+  t += 0.60 * t * (1.0 - t);
+  float coverage = smoothstep(0.0, 1.0, t) + 0.012 * smoothstep(0.0, 0.06, t) * (1.0 - t);
+  coverage += 0.075 * smoothstep(0.10, 0.28, t) * (1.0 - smoothstep(0.50, 0.80, t));
+  float field = texture2D(growthTexture, faceUV).r;
+  float dye = smoothstep(field, field + 0.018, coverage);
+  dye = mix(dye, 1.0, smoothstep(0.97, 1.0, progress));
+  dye *= faceSkin * faceVisible * step(${FIRST_PAINT_PROGRESS}, progress);
   float holes = max(max(featureHole(leftEye), featureHole(rightEye)), featureHole(mouth));
   dye *= 1.0 - holes * (1.0 - smoothstep(0.70, 0.94, progress));
   gl_FragColor = vec4(dyeColor, dye);
@@ -114,14 +121,13 @@ function growthField(geometry) {
   for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
     const u=x/(size-1), v=y/(size-1);
     let distance=1;
-    points.forEach(([px,py],i) => { distance = Math.min(distance, Math.hypot((u-px)*1.1,v-py) + i*0.055); });
+    points.forEach(([px,py],i) => { distance = Math.min(distance, Math.hypot((u-px)*1.1,v-py) + Math.max(0, i-1)*0.09); });
     field[y*size+x] = distance + noise(u*14,v*14)*0.065 + noise(u*37,v*37)*0.025;
   }
   // Rank the growth within the face oval, so most coverage does not arrive early.
-  const oval=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
   const faceCanvas=document.createElement('canvas');faceCanvas.width=faceCanvas.height=size;
   const context=faceCanvas.getContext('2d');context.beginPath();
-  oval.forEach((point,i)=>{const x=geometry.uv[point*2]*size,y=geometry.uv[point*2+1]*size;if(i)context.lineTo(x,y);else context.moveTo(x,y);});
+  FACE_OUTLINE.forEach((point,i)=>{const x=geometry.uv[point*2]*size,y=geometry.uv[point*2+1]*size;if(i)context.lineTo(x,y);else context.moveTo(x,y);});
   context.closePath();context.fill();
   const faceMask=context.getImageData(0,0,size,size).data;
   const sorted=Float32Array.from(field.filter((_,i)=>faceMask[i*4+3]>127)).sort();
@@ -134,11 +140,28 @@ function growthField(geometry) {
   return { size, data: result };
 }
 
+// The approved rounded bear contour, including both ears, is also used to fit the face.
+function bearContour() {
+  const head=new Path2D();
+  head.moveTo(-.54,-.86);
+  head.bezierCurveTo(-.50,-1.15,-.85,-1.18,-.90,-.95);
+  head.bezierCurveTo(-1.00,-.72,-.85,-.59,-.78,-.62);
+  head.bezierCurveTo(-.92,-.39,-1.01,-.09,-1,.16);
+  head.bezierCurveTo(-.99,.60,-.65,.98,0,1);
+  head.bezierCurveTo(.65,.98,.99,.60,1,.16);
+  head.bezierCurveTo(1.01,-.09,.92,-.39,.78,-.62);
+  head.bezierCurveTo(.85,-.59,1.00,-.72,.90,-.95);
+  head.bezierCurveTo(.85,-1.18,.50,-1.15,.54,-.86);
+  head.bezierCurveTo(.18,-1.04,-.18,-1.04,-.54,-.86);head.closePath();
+  return head;
+}
+
 export class DyeRenderer {
   constructor(canvas, features, geometry) {
     this.canvas=canvas; this.features=features; this.geometry=geometry;
     this.context=features.getContext('2d');
     this.characterFaces = new CharacterFaces();
+    this.bearHead = bearContour();
     this.bodyCenters=new Float32Array(6);this.bodyAxes=new Float32Array(6);this.bodyScales=new Float32Array(3);
     const gl=canvas.getContext('webgl', { alpha:false, antialias:true, premultipliedAlpha:false });
     if (!gl) throw new Error('此浏览器未能开启 WebGL，请尝试 Chrome 或 Edge。');
@@ -181,8 +204,7 @@ export class DyeRenderer {
     gl.useProgram(program.program);
     gl.uniform1i(u.cameraTexture,0); gl.uniform1i(u.skinTexture,1); gl.uniform1i(u.growthTexture,2);
     gl.uniform1f(u.progress,progress); gl.uniform1f(u.faceVisible,face?1:0);
-    if(this.group==='jokebear') gl.uniform3f(u.dyeColor,1,1,1);
-    else gl.uniform3f(u.dyeColor,1.0,0.91,0.27);
+    gl.uniform3f(u.dyeColor,1.0,0.91,0.27);
     const aspect=this.canvas.width/this.canvas.height;
     gl.uniform1f(u.frameAspect,aspect);
     if(face) {
@@ -203,8 +225,6 @@ export class DyeRenderer {
   }
 
   draw({bitmap,faces,skin},progress,group='nailong') {
-    this.group=group;
-    const character = CHARACTER_FACES[group];
     // Nearer/larger heads draw last. No array-index state can jump to another person.
     const visible=faces.slice(0,3).sort((a,b)=>{
       const size=({landmarks:f})=>Math.hypot(f[454].x-f[234].x,f[454].y-f[234].y);
@@ -217,13 +237,18 @@ export class DyeRenderer {
       gl.viewport(0,0,bitmap.width,bitmap.height);
     }
     this.context.clearRect(0,0,this.features.width,this.features.height);
-    if (character) {
+    if (CHARACTER_FACES[group]) {
       const image = this.characterFaces.prepare(group, progress);
       if (image) for (const { landmarks } of visible) {
-        this.characterFaces.draw(this.context, image, landmarks, character, bitmap.width, bitmap.height, progress, skin);
+        this.characterFaces.draw(this.context, image, landmarks, group, bitmap.width, bitmap.height, progress, skin);
       }
       return;
     }
+    if (group==='jokebear') {
+      for (const { landmarks, expressions } of visible) this.drawJokeBear(landmarks, expressions, progress);
+      return;
+    }
+    if (group!=='nailong' || progress<FIRST_PAINT_PROGRESS || !visible.length) return;
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.textures[0]);
     // ImageBitmap and segmentation rows are both sampled in top-to-bottom order.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
@@ -239,7 +264,7 @@ export class DyeRenderer {
       gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,skin.width,skin.height,0,gl.RGBA,gl.UNSIGNED_BYTE,this.skinBuffer);
     }
     gl.disable(gl.BLEND);
-    this.useProgram(this.bodyProgram,visible[0]?.landmarks,group==='jokebear'?0:progress);
+    this.useProgram(this.bodyProgram,visible[0].landmarks,progress);
     const aspect=bitmap.width/bitmap.height;
     visible.forEach(({landmarks:face},index)=>{
       const a=face[234],b=face[454],dx=(b.x-a.x)*aspect,dy=b.y-a.y,scale=Math.max(.001,Math.hypot(dx,dy));
@@ -253,7 +278,15 @@ export class DyeRenderer {
     this.attribute(this.bodyProgram.position,this.quad);this.attribute(this.bodyProgram.uv,this.quad);
     gl.drawArrays(gl.TRIANGLES,0,6);
     for(const {landmarks:face} of visible) {
-      for(let i=0;i<468;i++) {this.vertexData[i*2]=face[i].x;this.vertexData[i*2+1]=face[i].y;}
+      // Finish with a small margin around the contour, pivoting at the chin.
+      const settle=Math.max(0,Math.min(1,(progress-.48)/.35));
+      const scale=1+.35*settle*settle*(3-2*settle);
+      const centerX=(face[234].x+face[454].x)/2, chin=face[152].y;
+      const chinMargin=Math.hypot(face[454].x-face[234].x,(face[454].y-face[234].y)/aspect)*aspect*.055*settle;
+      for(let i=0;i<468;i++) {
+        this.vertexData[i*2]=centerX+(face[i].x-centerX)*scale;
+        this.vertexData[i*2+1]=chin+(face[i].y-chin)*scale+chinMargin;
+      }
       gl.bindBuffer(gl.ARRAY_BUFFER,this.positions);gl.bufferData(gl.ARRAY_BUFFER,this.vertexData,gl.DYNAMIC_DRAW);
       gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
       this.useProgram(this.faceProgram,face,progress);
@@ -262,15 +295,12 @@ export class DyeRenderer {
       gl.drawElements(gl.TRIANGLES,this.geometry.triangles.length,gl.UNSIGNED_SHORT,0);
       gl.disable(gl.BLEND);
     }
-    for(const {landmarks:face,expressions} of visible) {
-      if(group==='jokebear') this.drawJokeBear(face,expressions,progress);
-      else this.drawFeatures(face,expressions,progress);
-    }
+    for(const {landmarks:face,expressions} of visible) this.drawFeatures(face,expressions,progress);
   }
 
   drawJokeBear(face,expressions,progress) {
     const ctx=this.context,w=this.features.width,h=this.features.height;
-    if(progress<0.38) return;
+    if(progress<FIRST_PAINT_PROGRESS) return;
     const ease=(start,end)=>{
       const t=Math.max(0,Math.min(1,(progress-start)/(end-start)));
       return t*t*(3-2*t);
@@ -282,48 +312,50 @@ export class DyeRenderer {
     const angle=Math.atan2(eyeRight.y-eyeLeft.y,eyeRight.x-eyeLeft.x);
     const height=Math.hypot(chin.x-top.x,chin.y-top.y);
     const width=Math.hypot(b.x-a.x,b.y-a.y);
-    const pose={x:(eyeLeft.x+eyeRight.x)/2-Math.sin(angle)*height*.16,
-      y:(eyeLeft.y+eyeRight.y)/2+Math.cos(angle)*height*.16,width,angle};
-    const round=ease(.38,.94),details=ease(.56,.87);
-    const rx=width*(.52+.22*round),ry=rx*.85;
-    const local=p=>({x:(p.x-pose.x)*Math.cos(angle)+(p.y-pose.y)*Math.sin(angle),
-      y:-(p.x-pose.x)*Math.sin(angle)+(p.y-pose.y)*Math.cos(angle)});
+    const cosine=Math.cos(angle),sine=Math.sin(angle);
+    const center={x:(eyeLeft.x+eyeRight.x)/2,y:(eyeLeft.y+eyeRight.y)/2};
+    const local=p=>({x:(p.x-center.x)*cosine+(p.y-center.y)*sine,
+      y:-(p.x-center.x)*sine+(p.y-center.y)*cosine});
+    const settle=ease(.48,.83),details=ease(.56,.87);
+    const across=(local(a).x+local(b).x)/2, targetChin=local(chin).y+width*.055;
+    let rx=width*.62;
+    if (settle>0) {
+      const outline=FACE_OUTLINE.map(index=>{
+        const p=local(point(index));
+        return [p.x-across,targetChin-p.y];
+      });
+      const fitted=fitFaceSize(outline,rx,(x,fromChin)=>ctx.isPointInPath(this.bearHead,x,1-fromChin/.85));
+      rx+=(fitted-rx)*settle;
+    }
+    const ry=rx*.85;
+    const x=across*settle,y=height*.16+(targetChin-ry-height*.16)*settle;
     const expression=name=>expressions.find(item=>item.categoryName===name)?.score||0;
     const fill=path=>{
       ctx.fillStyle='#fff';ctx.fill(path);
       ctx.strokeStyle='#111';ctx.lineWidth=rx*.06;ctx.lineJoin='round';ctx.stroke(path);
     };
-    ctx.save();ctx.translate(pose.x,pose.y);ctx.rotate(pose.angle);
-    ctx.scale(rx,ry);
-    const head=new Path2D();
-    // One continuous contour keeps ears joined to the approved rounded cheek shape.
-    head.moveTo(-.54,-.86);
-    head.bezierCurveTo(-.50,-1.15,-.85,-1.18,-.90,-.95);
-    head.bezierCurveTo(-1.00,-.72,-.85,-.59,-.78,-.62);
-    head.bezierCurveTo(-.92,-.39,-1.01,-.09,-1,.16);
-    head.bezierCurveTo(-.99,.60,-.65,.98,0,1);
-    head.bezierCurveTo(.65,.98,.99,.60,1,.16);
-    head.bezierCurveTo(1.01,-.09,.92,-.39,.78,-.62);
-    head.bezierCurveTo(.85,-.59,1.00,-.72,.90,-.95);
-    head.bezierCurveTo(.85,-1.18,.50,-1.15,.54,-.86);
-    head.bezierCurveTo(.18,-1.04,-.18,-1.04,-.54,-.86);head.closePath();
-    ctx.scale(1/rx,1/ry);
-    const silhouette=new Path2D();silhouette.addPath(head,new DOMMatrix().scale(rx,ry));
+    ctx.save();ctx.translate(center.x,center.y);ctx.rotate(angle);ctx.translate(x,y);
+    const silhouette=new Path2D();silhouette.addPath(this.bearHead,new DOMMatrix().scale(rx,ry));
     // Rounded opaque patches grow into one silhouette; no flat wipe or opacity fade.
     ctx.save();ctx.beginPath();
-    for(const [x,y] of [[-.58,.22],[.57,.20],[0,-.70],[0,.65]]) {
-      const radius=rx*round*2.2;ctx.moveTo(x*rx+radius,y*ry);ctx.arc(x*rx,y*ry,radius,0,Math.PI*2);
+    const earlySpread=(.065+.13*ease(.085,.25))*ease(FIRST_PAINT_PROGRESS,.085)*(1-ease(.28,.62));
+    for(const [x,y,delay] of [[-.52,.22,0],[.52,.20,0],[0,-.55,.14],[0,.65,.22]]) {
+      const start=FIRST_PAINT_PROGRESS+delay;
+      const radius=rx*(Math.max(0,(progress-start)/(1-start))+(delay===0?earlySpread:0));
+      ctx.moveTo(x*rx+radius,y*ry);ctx.arc(x*rx,y*ry,radius,0,Math.PI*2);
     }
-    ctx.clip();fill(silhouette);
+    if (progress < .99) ctx.clip();
+    fill(silhouette);
     ctx.restore();
     if(details>0) {
       ctx.fillStyle='#1c1b1a';ctx.strokeStyle='#1c1b1a';ctx.lineCap='round';ctx.lineJoin='round';
       for(const [p,blinkName] of [[eyeLeft,'eyeBlinkLeft'],[eyeRight,'eyeBlinkRight']]) {
         const eye=local(p);
         const blink=Math.max(.16,1-expression(blinkName));
-        ctx.beginPath();ctx.ellipse(eye.x,eye.y,rx*.064*details,rx*.064*details*blink,0,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.ellipse(eye.x-x,eye.y-y,rx*.064*details,rx*.064*details*blink,0,0,Math.PI*2);ctx.fill();
       }
       const nose=local(point(1));
+      nose.x-=x;nose.y-=y;
       ctx.beginPath();ctx.moveTo(nose.x-rx*.078,nose.y);ctx.quadraticCurveTo(nose.x,nose.y-ry*.04,nose.x+rx*.078,nose.y);
       ctx.quadraticCurveTo(nose.x+rx*.055,nose.y+ry*.06,nose.x,nose.y+ry*.105);ctx.quadraticCurveTo(nose.x-rx*.055,nose.y+ry*.06,nose.x-rx*.078,nose.y);ctx.fill();
       ctx.lineWidth=rx*.05*details;

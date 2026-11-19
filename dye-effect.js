@@ -1,9 +1,8 @@
-import { CHARACTER_FACES, FIRST_PAINT_PROGRESS } from './character-faces.js?v=lulu-face-fit-2';
-import { DyeRenderer } from './dye-renderer.js?v=lulu-face-fit-2';
+import { CHARACTER_FACES, FIRST_PAINT_PROGRESS } from './character-faces.js?v=pool-face-sync-1';
+import { DyeRenderer } from './dye-renderer.js?v=pool-face-sync-1';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
-const TOTAL_STEPS = 24;
-const CHARACTER_STEPS = 12;
+const TOTAL_STEPS = 12;
 
 export class DyeEffect {
   constructor(video,canvas,features,onStatus) {
@@ -50,13 +49,12 @@ export class DyeEffect {
             const delta=Math.min(1000,now-(this.lastDraw||now));
             this.lastDraw=now;
             this.shown+=(this.target-this.shown)*(1-Math.exp(-delta/320));
+            if (this.target - this.shown < .005) this.shown = this.target;
             const supported=Boolean(this.label);
-            const character=CHARACTER_FACES[this.group];
-            const featureStart=character?(character.firstPaint?FIRST_PAINT_PROGRESS:0.085):this.group==='jokebear'?0.38:0.72;
             const count=data.faces.length;
             this.renderer.draw(data,supported?this.shown:0,this.group);
-            this.canvas.hidden=Boolean(character)||!count||!supported||this.shown<0.001;
-            this.features.hidden=!count||!supported||this.shown<featureStart;
+            this.canvas.hidden=this.group!=='nailong'||!count||this.shown<FIRST_PAINT_PROGRESS;
+            this.features.hidden=!count||!supported||this.shown<FIRST_PAINT_PROGRESS;
             this.canvas.dataset.face=count?'tracked':'missing';
             this.canvas.dataset.faceCount=count;
             this.canvas.dataset.inferenceMs=Math.round(data.inferenceMs);
@@ -87,16 +85,15 @@ export class DyeEffect {
       const height=Math.round(width*this.video.videoHeight/this.video.videoWidth);
       createImageBitmap(this.video,{resizeWidth:width,resizeHeight:height}).then(bitmap=>{
         if(generation!==this.generation||!this.worker) {bitmap.close();return;}
-        const fitHair = this.target > .48 && Boolean(CHARACTER_FACES[this.group]?.headCenter);
-        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:this.group==='nailong'||this.group==='jokebear'||fitHair},[bitmap]);
+        const fitHair = this.target > .48 && Boolean(CHARACTER_FACES[this.group]?.coverHair);
+        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:this.group==='nailong'||fitHair},[bitmap]);
       }).catch(()=>{if(generation===this.generation) this.busy=false;});
     }
     this.schedule();
   }
 
   setProgress(steps) {
-    const totalSteps = CHARACTER_FACES[this.group] ? CHARACTER_STEPS : TOTAL_STEPS;
-    this.target=Math.min(1,Math.max(0,steps/totalSteps));
+    this.target=Math.min(1,Math.max(0,steps/TOTAL_STEPS));
     if(!steps) {this.shown=0;this.canvas.hidden=true;this.features.hidden=true;}
   }
 
