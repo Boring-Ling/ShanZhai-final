@@ -1,4 +1,5 @@
-import { CHARACTER_HEADS, DyeRenderer } from './dye-renderer.js?v=character-features-3';
+import { CHARACTER_FACES } from './character-faces.js?v=character-art-4';
+import { DyeRenderer } from './dye-renderer.js?v=character-art-4';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
@@ -15,7 +16,7 @@ export class DyeEffect {
   get label() {
     if (this.group === 'nailong') return '染色';
     if (this.group === 'jokebear') return '熊化';
-    return CHARACTER_HEADS[this.group] ? '卡通化' : '';
+    return CHARACTER_FACES[this.group] ? '卡通化' : '';
   }
 
   async start() {
@@ -49,10 +50,11 @@ export class DyeEffect {
             this.lastDraw=now;
             this.shown+=(this.target-this.shown)*(1-Math.exp(-delta/320));
             const supported=Boolean(this.label);
-            const featureStart=CHARACTER_HEADS[this.group]?0.10:this.group==='jokebear'?0.38:0.72;
+            const character=Boolean(CHARACTER_FACES[this.group]);
+            const featureStart=character?0.085:this.group==='jokebear'?0.38:0.72;
             const count=data.faces.length;
             this.renderer.draw(data,supported?this.shown:0,this.group);
-            this.canvas.hidden=!count||!supported||this.shown<0.001;
+            this.canvas.hidden=character||!count||!supported||this.shown<0.001;
             this.features.hidden=!count||!supported||this.shown<featureStart;
             this.canvas.dataset.face=count?'tracked':'missing';
             this.canvas.dataset.faceCount=count;
