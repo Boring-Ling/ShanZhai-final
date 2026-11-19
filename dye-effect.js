@@ -1,5 +1,5 @@
-import { CHARACTER_FACES } from './character-faces.js?v=character-art-4';
-import { DyeRenderer } from './dye-renderer.js?v=character-art-4';
+import { CHARACTER_FACES } from './character-faces.js?v=character-art-5';
+import { DyeRenderer } from './dye-renderer.js?v=character-art-5';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;

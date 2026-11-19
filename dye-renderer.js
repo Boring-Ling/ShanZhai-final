@@ -1,4 +1,4 @@
-import { CHARACTER_FACES, CharacterFaces } from './character-faces.js?v=character-art-4';
+import { CHARACTER_FACES, CharacterFaces } from './character-faces.js?v=character-art-5';
 
 const vertexSource = `
 attribute vec2 position;

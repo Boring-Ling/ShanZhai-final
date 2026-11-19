@@ -102,20 +102,19 @@ export class CharacterFaces {
     const chin = -(face[152].x * width - centerX) * Math.sin(angle) + (face[152].y * height - centerY) * Math.cos(angle);
     const sourceX = (design.leftEye[0] + design.rightEye[0]) / 2;
     const sourceY = (design.leftEye[1] + design.rightEye[1]) / 2;
-    const scaleX = faceWidth * 1.18 / design.width;
+    const size = faceWidth * 1.24 / design.width;
     const targetChin = chin + faceWidth * .015;
-    const scaleY = clamp(targetChin / (design.chin - sourceY), scaleX * .87, scaleX * 1.16);
     // Early paint follows the real eyes. Settle the nearly complete character
-    // onto the jaw without stretching its round artwork into a long face.
+    // onto the jaw by translating the artwork at its original proportions.
     const settle = clamp((progress - .48) / .35, 0, 1);
-    const jawAdjustment = Math.max(0, targetChin - (design.chin - sourceY) * scaleY);
-    const y = -sourceY * scaleY + jawAdjustment * settle * settle * (3 - 2 * settle);
+    const jawAdjustment = targetChin - (design.chin - sourceY) * size;
+    const y = -sourceY * size + jawAdjustment * settle * settle * (3 - 2 * settle);
     ctx.save();
     ctx.translate(centerX, centerY);
     ctx.rotate(angle);
     // The webcam layer is mirrored in CSS. Preserve the original art's asymmetry.
     ctx.scale(-1, 1);
-    ctx.drawImage(image, -sourceX * scaleX, y, scaleX, scaleY);
+    ctx.drawImage(image, -sourceX * size, y, size, size);
     ctx.restore();
   }
 }
