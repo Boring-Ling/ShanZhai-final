@@ -4,11 +4,35 @@ export const CHARACTER_FACES = {
   chiikawa: { leftEye: [.35, .40], rightEye: [.61, .45], crown: .17, chin: .89, width: .83, headCenter: .48 },
   hachiware: { leftEye: [.34, .55], rightEye: [.58, .55], crown: .28, chin: .83, width: .77, headCenter: .49 },
   usagi: { leftEye: [.36, .65], rightEye: [.54, .64], crown: .34, chin: .90, width: .63, headCenter: .48 },
-  lulu: { leftEye: [.407, .425], rightEye: [.637, .382], crown: .27, chin: .83, width: .70 },
+  lulu: { leftEye: [.407, .425], rightEye: [.637, .382], crown: .27, chin: .83, width: .70,
+    artCenter: .51, firstPaint: [[.345, .505], [.70, .58]] },
 };
 
 const SIZE = 256;
+export const FIRST_PAINT_PROGRESS = .025;
+const FACE_OUTLINE = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+  152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+function fitLulu(alpha, face, localX, localY, cheekCenter, targetChin, design, baseSize) {
+  const outline = FACE_OUTLINE.map(index => [localX(face[index]), targetChin - localY(face[index])]);
+  let bestSize = baseSize, fewestMisses = Infinity;
+  for (let step = 0; step <= 22; step++) {
+    const size = baseSize * (1 + step * .025);
+    let misses = 0;
+    for (const [across, fromChin] of outline) {
+      const u = Math.floor((design.artCenter - (across - cheekCenter) / size) * SIZE);
+      const v = Math.floor((design.chin - fromChin / size) * SIZE);
+      if (u < 0 || u >= SIZE || v < 0 || v >= SIZE || alpha[(v * SIZE + u) * 4 + 3] < 240) misses++;
+    }
+    if (misses === 0) return size;
+    if (misses < fewestMisses) {
+      bestSize = size;
+      fewestMisses = misses;
+    }
+  }
+  return bestSize;
+}
 
 function fitHead(skin, picture, pose, design, size, forehead, chin) {
   const { width, height } = picture;
@@ -45,6 +69,7 @@ function buildArrivalMap(design) {
   const map = new Float32Array(SIZE * SIZE);
   const height = design.chin - design.crown;
   const center = (design.leftEye[0] + design.rightEye[0]) / 2;
+  const firstPaint = design.firstPaint ?? [];
   for (let row = 0; row < SIZE; row++) {
     for (let col = 0; col < SIZE; col++) {
       const x = (col + 0.5) / SIZE;
@@ -61,6 +86,10 @@ function buildArrivalMap(design) {
       const rim = Math.hypot(u * 2, (v - .52) * 2);
       const texture = .022 * Math.sin(x * 58 + y * 21) * Math.cos(y * 61 - x * 32);
       let arrival = .12 + .79 * distance + .22 * rim * rim + texture;
+      for (const [seedX, seedY] of firstPaint) {
+        const spread = .027 + .88 * Math.hypot((x - seedX) * 1.3, (y - seedY) * 1.5);
+        arrival = Math.min(arrival, spread + texture * .2);
+      }
       // Reserve the real eyes until the paint around them has spread.
       const eyeDistance = Math.min(
         Math.hypot((x - design.leftEye[0]) / .103, (y - design.leftEye[1]) / .070),
@@ -73,7 +102,7 @@ function buildArrivalMap(design) {
         const blend = clamp((.15 - v) / .10, 0, 1);
         arrival += (earArrival - arrival) * blend;
       }
-      map[row * SIZE + col] = clamp(arrival, .09, .965);
+      map[row * SIZE + col] = clamp(arrival, design.firstPaint ? FIRST_PAINT_PROGRESS : .09, .965);
     }
   }
   return map;
@@ -92,15 +121,22 @@ export class CharacterFaces {
   }
 
   prepare(group, progress) {
-    if (progress < .085) return null;
+    const design = CHARACTER_FACES[group];
     let source = this.images.get(group);
     if (!source) {
       const image = new Image();
       image.src = new URL(`./assets/pool-${group}.png`, import.meta.url).href;
-      source = { image, map: buildArrivalMap(CHARACTER_FACES[group]) };
+      source = { image, map: buildArrivalMap(design) };
       this.images.set(group, source);
     }
-    if (!source.image.complete || !source.image.naturalWidth) return null;
+    if (progress < (design.firstPaint ? FIRST_PAINT_PROGRESS : .085) || !source.image.complete || !source.image.naturalWidth) return null;
+    if (design.firstPaint && !source.alpha) {
+      const ctx = this.frameContext;
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(source.image, 0, 0, SIZE, SIZE);
+      source.alpha = ctx.getImageData(0, 0, SIZE, SIZE).data;
+      this.renderKey = '';
+    }
     if (progress >= .99) return source.image;
 
     // One masked texture per progress value, reused for all tracked people.
@@ -132,28 +168,38 @@ export class CharacterFaces {
     const faceWidth = Math.hypot((face[454].x - face[234].x) * width, (face[454].y - face[234].y) * height);
     if (faceWidth < 2) return;
     const cosine = Math.cos(angle), sine = Math.sin(angle);
+    const localX = landmark => (landmark.x * width - centerX) * cosine + (landmark.y * height - centerY) * sine;
     const localY = landmark => -(landmark.x * width - centerX) * sine + (landmark.y * height - centerY) * cosine;
     const chin = localY(face[152]);
     const sourceX = (design.leftEye[0] + design.rightEye[0]) / 2;
     const sourceY = (design.leftEye[1] + design.rightEye[1]) / 2;
     const baseSize = faceWidth * 1.24 / design.width;
-    const targetChin = chin + faceWidth * .015;
+    const targetChin = chin + faceWidth * (design.firstPaint ? .055 : .015);
     // Early paint follows the real eyes. Settle the nearly complete character
     // onto the jaw by translating the artwork at its original proportions.
     const settle = clamp((progress - .48) / .35, 0, 1);
     const smooth = settle * settle * (3 - 2 * settle);
     let size = baseSize;
     let anchorX = sourceX;
+    let offsetX = 0;
     if (design.headCenter && smooth > 0) {
       const pose = { x: centerX, y: centerY, cosine, sine, faceWidth };
       size += (fitHead(skin, { width, height }, pose, design, baseSize, localY(face[10]), targetChin) - size) * smooth;
       anchorX += (design.headCenter - sourceX) * smooth;
+    }
+    const luluAlpha = design.firstPaint ? this.images.get('lulu')?.alpha : null;
+    if (luluAlpha && smooth > 0) {
+      const cheekCenter = (localX(face[234]) + localX(face[454])) / 2;
+      size += (fitLulu(luluAlpha, face, localX, localY, cheekCenter, targetChin, design, baseSize) - size) * smooth;
+      anchorX += (design.artCenter - sourceX) * smooth;
+      offsetX = cheekCenter * smooth;
     }
     const jawAdjustment = targetChin - (design.chin - sourceY) * size;
     const y = -sourceY * size + jawAdjustment * smooth;
     ctx.save();
     ctx.translate(centerX, centerY);
     ctx.rotate(angle);
+    ctx.translate(offsetX, 0);
     // The webcam layer is mirrored in CSS. Preserve the original art's asymmetry.
     ctx.scale(-1, 1);
     ctx.drawImage(image, -anchorX * size, y, size, size);

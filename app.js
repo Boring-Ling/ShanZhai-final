@@ -1,4 +1,4 @@
-import { DyeEffect } from './dye-effect.js?v=lulu-head-fit-1';
+import { DyeEffect } from './dye-effect.js?v=lulu-face-fit-2';
 
 const $ = (id) => document.getElementById(id);
 const pools = {

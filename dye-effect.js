@@ -1,5 +1,5 @@
-import { CHARACTER_FACES } from './character-faces.js?v=lulu-head-fit-1';
-import { DyeRenderer } from './dye-renderer.js?v=lulu-head-fit-1';
+import { CHARACTER_FACES, FIRST_PAINT_PROGRESS } from './character-faces.js?v=lulu-face-fit-2';
+import { DyeRenderer } from './dye-renderer.js?v=lulu-face-fit-2';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
@@ -51,11 +51,11 @@ export class DyeEffect {
             this.lastDraw=now;
             this.shown+=(this.target-this.shown)*(1-Math.exp(-delta/320));
             const supported=Boolean(this.label);
-            const character=Boolean(CHARACTER_FACES[this.group]);
-            const featureStart=character?0.085:this.group==='jokebear'?0.38:0.72;
+            const character=CHARACTER_FACES[this.group];
+            const featureStart=character?(character.firstPaint?FIRST_PAINT_PROGRESS:0.085):this.group==='jokebear'?0.38:0.72;
             const count=data.faces.length;
             this.renderer.draw(data,supported?this.shown:0,this.group);
-            this.canvas.hidden=character||!count||!supported||this.shown<0.001;
+            this.canvas.hidden=Boolean(character)||!count||!supported||this.shown<0.001;
             this.features.hidden=!count||!supported||this.shown<featureStart;
             this.canvas.dataset.face=count?'tracked':'missing';
             this.canvas.dataset.faceCount=count;
