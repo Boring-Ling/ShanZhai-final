@@ -41,7 +41,7 @@ body {
 .camera-frame::before { border-color: #d9deed50; }
 .paper-button { color: #242522; color-scheme: light; text-shadow: none; }
 .next-button { background: #11151bc9; }
-.workbench .experiment { row-gap: clamp(14px, 2.3vh, 28px); }
+.experiment { row-gap: clamp(10px, 1.7vh, 22px); }
 .feed-footer { justify-content: flex-end; }
 .pool-avatars {
   grid-column: 1 / -1;
@@ -73,5 +73,5 @@ body {
 .effect-controls > span { color: #c0c3cc; }
 
 @media (max-height: 820px) {
-  .workbench { --frame-height: min(calc(100vh - 246px), (100vw - 144px) * 144 / 337); }
+  .pool-avatars img { width: min(100%, clamp(52px, 10vh, 80px)); }
 }
