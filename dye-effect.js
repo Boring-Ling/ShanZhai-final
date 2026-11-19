@@ -1,9 +1,9 @@
-import { CHARACTER_FACES } from './character-faces.js?v=character-art-5';
-import { DyeRenderer } from './dye-renderer.js?v=character-art-5';
+import { CHARACTER_FACES } from './character-faces.js?v=lulu-head-fit-1';
+import { DyeRenderer } from './dye-renderer.js?v=lulu-head-fit-1';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
-const CHIIKAWA_STEPS = 12;
+const CHARACTER_STEPS = 12;
 
 export class DyeEffect {
   constructor(video,canvas,features,onStatus) {
@@ -87,14 +87,15 @@ export class DyeEffect {
       const height=Math.round(width*this.video.videoHeight/this.video.videoWidth);
       createImageBitmap(this.video,{resizeWidth:width,resizeHeight:height}).then(bitmap=>{
         if(generation!==this.generation||!this.worker) {bitmap.close();return;}
-        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:this.group==='nailong'||this.group==='jokebear'},[bitmap]);
+        const fitHair = this.target > .48 && Boolean(CHARACTER_FACES[this.group]?.headCenter);
+        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:this.group==='nailong'||this.group==='jokebear'||fitHair},[bitmap]);
       }).catch(()=>{if(generation===this.generation) this.busy=false;});
     }
     this.schedule();
   }
 
   setProgress(steps) {
-    const totalSteps = CHARACTER_FACES[this.group] ? CHIIKAWA_STEPS : TOTAL_STEPS;
+    const totalSteps = CHARACTER_FACES[this.group] ? CHARACTER_STEPS : TOTAL_STEPS;
     this.target=Math.min(1,Math.max(0,steps/totalSteps));
     if(!steps) {this.shown=0;this.canvas.hidden=true;this.features.hidden=true;}
   }

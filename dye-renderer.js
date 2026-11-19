@@ -1,4 +1,4 @@
-import { CHARACTER_FACES, CharacterFaces } from './character-faces.js?v=character-art-5';
+import { CHARACTER_FACES, CharacterFaces } from './character-faces.js?v=lulu-head-fit-1';
 
 const vertexSource = `
 attribute vec2 position;
@@ -220,7 +220,7 @@ export class DyeRenderer {
     if (character) {
       const image = this.characterFaces.prepare(group, progress);
       if (image) for (const { landmarks } of visible) {
-        this.characterFaces.draw(this.context, image, landmarks, character, bitmap.width, bitmap.height, progress);
+        this.characterFaces.draw(this.context, image, landmarks, character, bitmap.width, bitmap.height, progress, skin);
       }
       return;
     }
