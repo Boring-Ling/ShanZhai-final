@@ -1,6 +1,7 @@
 import { DyeEffect } from './dye-effect.js?v=pool-face-sync-1';
 
 const $ = (id) => document.getElementById(id);
+const camera = $('camera');
 const pools = {
   nailong: { name: '奶龙 / 奶蛙', handle: '奶龙放映室', tag: '#奶龙 #奶蛙 #今天也要开心', avatar: 'nailong.png', clips: ['nailong-01', 'nailong-02', 'nailong-03', 'nailong-04'] },
   lulu: { name: '噜噜', handle: '噜噜循环播放', tag: '#噜噜 #再看一遍 #为你推荐', avatar: 'lulu.png', clips: ['lulu-01', 'lulu-02', 'lulu-03', 'lulu-04'] },
@@ -41,7 +42,7 @@ let touchStart = null;
 let toastTimer;
 const interactions = new Map();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const dye = new DyeEffect($('camera'), $('dye-canvas'), $('features-canvas'), (message, failed) => {
+const dye = new DyeEffect(camera, $('dye-canvas'), $('features-canvas'), (message, failed) => {
   if ($('tracking-status').textContent !== message) $('tracking-status').textContent = message;
   $('retry-effect').hidden = !failed;
 });
@@ -209,40 +210,97 @@ $('comment-form').addEventListener('submit', event => {
   currentCard.querySelector('[data-action=comment] span').textContent = stats().comments.length;
   openComments();
 });
-function releaseCamera() {
-  cameraGeneration++;
+function closeCameraStream() {
   stream?.getTracks().forEach(track => track.stop());
   stream = null;
+  camera.srcObject = null;
+  camera.hidden = true;
+}
+function releaseCamera() {
+  cameraGeneration++;
   cameraPending = false;
   dye.stop();
-  $('camera').srcObject = null;
+  closeCameraStream();
+}
+function showCameraError(message) {
+  releaseCamera();
+  $('camera-empty').hidden = false;
+  $('camera-message').textContent = message;
+  $('enable-camera').textContent = '重试摄像头 ↻';
+  $('enable-camera').disabled = false;
+  $('tracking-status').textContent = '';
+  $('retry-effect').hidden = true;
+}
+async function playCameraPreview() {
+  let timeout;
+  try {
+    await Promise.race([
+      camera.play(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new DOMException('Camera preview timed out', 'TimeoutError')), 6000);
+      }),
+    ]);
+    if (!camera.videoWidth) throw new DOMException('Camera returned no video', 'TimeoutError');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function cameraErrorMessage(error, preview) {
+  switch (error.name) {
+    case 'NotAllowedError':
+      return preview ? '浏览器暂停了摄像头预览，请点击重试' : '摄像头访问被阻止，请在浏览器地址栏和系统隐私设置中检查权限';
+    case 'NotFoundError':
+      return '没有检测到摄像头，请检查设备是否连接';
+    case 'NotReadableError':
+    case 'AbortError':
+      return '摄像头无法启动，可能被其他标签页或应用占用。关闭它们后重试';
+    case 'TimeoutError':
+      return '已连接摄像头，但没有收到画面。请关闭其他正在使用摄像头的页面或应用后重试';
+    case 'OverconstrainedError':
+      return '摄像头无法使用当前视频设置，请检查连接后重试';
+    default:
+      return '未能启动摄像头，请检查设备后重试';
+  }
 }
 async function enableCamera() {
   if (cameraPending || stream) return;
   if (!navigator.mediaDevices?.getUserMedia) { $('camera-message').textContent = '请通过 localhost 或 HTTPS 打开，以使用摄像头'; return; }
   cameraPending = true;
   const generation = ++cameraGeneration;
-  $('camera-message').textContent = '请允许浏览器使用摄像头';
+  $('camera-message').textContent = '正在连接摄像头，如有提示请点击允许';
   $('enable-camera').disabled = true;
-  try {
-    const acquired = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } }, audio: false });
-    if (generation !== cameraGeneration) { acquired.getTracks().forEach(track => track.stop()); return; }
-    stream = acquired;
-    $('camera').srcObject = stream;
-    await $('camera').play();
-    if (generation !== cameraGeneration) return;
-    $('camera-empty').hidden = true;
-    $('camera').hidden = false;
-    dye.start();
-    stream.getVideoTracks()[0].addEventListener('ended', () => {
-      releaseCamera(); $('camera-empty').hidden = false; $('camera-message').textContent = '摄像头已断开，可以重新连接'; $('enable-camera').disabled = false; $('tracking-status').textContent = '';
-    });
-  } catch (error) {
-    if (generation !== cameraGeneration) return;
-    releaseCamera();
-    $('camera-message').textContent = error.name === 'NotAllowedError' ? '摄像头权限未开启，请在地址栏允许后重试' : '未能连接摄像头，请检查设备后重试';
-  } finally {
-    if (generation === cameraGeneration || !stream) { cameraPending = false; $('enable-camera').disabled = false; }
+  const preferred = { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
+  for (const video of [preferred, true]) {
+    try {
+      const acquired = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      if (generation !== cameraGeneration) { acquired.getTracks().forEach(track => track.stop()); return; }
+      stream = acquired;
+      $('camera-message').textContent = '正在等待摄像头画面…';
+      camera.muted = true;
+      camera.hidden = false;
+      camera.srcObject = stream;
+      await playCameraPreview();
+      if (generation !== cameraGeneration) return;
+      const track = stream.getVideoTracks()[0];
+      if (track?.readyState !== 'live') throw new DOMException('Camera stopped before preview', 'NotReadableError');
+      track.addEventListener('ended', () => {
+        if (generation === cameraGeneration) showCameraError('摄像头已断开，可以重新连接');
+      }, { once: true });
+      cameraPending = false;
+      $('enable-camera').disabled = false;
+      $('camera-empty').hidden = true;
+      dye.start();
+      return;
+    } catch (error) {
+      if (generation !== cameraGeneration) return;
+      if (video === preferred && ['NotReadableError', 'AbortError', 'OverconstrainedError', 'TimeoutError'].includes(error.name)) {
+        closeCameraStream();
+        $('camera-message').textContent = '正在用默认设置重新连接摄像头…';
+        continue;
+      }
+      showCameraError(cameraErrorMessage(error, Boolean(stream)));
+      return;
+    }
   }
 }
 $('enable-camera').addEventListener('click', enableCamera);
@@ -253,10 +311,10 @@ $('reset').addEventListener('click', () => {
   renderInitialCard();
 });
 window.addEventListener('pagehide', () => { releaseCamera(); currentCard?.querySelector('video').pause(); });
-window.addEventListener('pageshow', event => { if (event.persisted) { enableCamera(); playCard(currentCard); } });
+window.addEventListener('pageshow', event => { if (event.persisted) { if (!document.hidden) enableCamera(); playCard(currentCard); } });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) currentCard?.querySelector('video').pause();
   else if (currentCard) playCard(currentCard);
 });
 renderInitialCard();
-enableCamera();
+if (!document.hidden) enableCamera();
