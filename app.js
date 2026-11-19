@@ -269,7 +269,7 @@ async function enableCamera() {
   const generation = ++cameraGeneration;
   $('camera-message').textContent = '正在连接摄像头，如有提示请点击允许';
   $('enable-camera').disabled = true;
-  const preferred = { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
+  const preferred = { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 }, aspectRatio: { ideal: 4 / 3 } };
   for (const video of [preferred, true]) {
     try {
       const acquired = await navigator.mediaDevices.getUserMedia({ video, audio: false });

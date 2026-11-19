@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#030507">
   <title>抖歪</title>
-  <link rel="stylesheet" href="styles.css?v=larger-panels-1">
+  <link rel="stylesheet" href="styles.css?v=camera-4by3-1">
   <link rel="stylesheet" href="glass-background.css?v=larger-panels-1">
 </head>
 <body>
@@ -28,9 +28,9 @@
     <div class="experiment">
       <section class="camera-panel" aria-label="实时摄像头">
         <div class="camera-frame">
-          <video id="camera" autoplay muted playsinline aria-label="16比9实时摄像头画面"></video>
-          <canvas id="dye-canvas" width="1280" height="720" hidden aria-label="随刷动累积的实时皮肤染色画面"></canvas>
-          <canvas id="features-canvas" width="1280" height="720" hidden aria-hidden="true"></canvas>
+          <video id="camera" autoplay muted playsinline aria-label="4比3实时摄像头画面"></video>
+          <canvas id="dye-canvas" width="960" height="720" hidden aria-label="随刷动累积的实时皮肤染色画面"></canvas>
+          <canvas id="features-canvas" width="960" height="720" hidden aria-hidden="true"></canvas>
           <div class="camera-grid" aria-hidden="true"></div>
           <span class="viewfinder top-left"></span><span class="viewfinder top-right"></span><span class="viewfinder bottom-left"></span><span class="viewfinder bottom-right"></span>
           <div class="camera-empty" id="camera-empty"><svg aria-hidden="true"><use href="#camera-icon"/></svg><p id="camera-message" role="status"></p><button id="enable-camera" class="paper-button">开启摄像头 ↗</button></div>
@@ -61,7 +61,7 @@
     </div>
   </main>
   <div id="toast" role="status" class="toast" hidden></div>
-  <script src="app.js?v=camera-preview-retry-1" type="module"></script>
+  <script src="app.js?v=camera-4by3-1" type="module"></script>
   <script src="glass-background.js" type="module"></script>
 </body>
 </html>
