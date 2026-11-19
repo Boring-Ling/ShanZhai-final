@@ -80,11 +80,10 @@ void main() {
   gl_FragColor = vec4(color, dye);
 }`;
 
-// Anchor each supplied sticker using its face oval, excluding the ears.
 export const CHARACTER_HEADS = {
-  chiikawa: { centerX: 0.49, crown: 0.18, chin: 0.91, width: 0.81, dye: [0.98, 0.95, 0.96] },
-  hachiware: { centerX: 0.50, crown: 0.29, chin: 0.85, width: 0.75, dye: [0.98, 0.95, 0.96] },
-  usagi: { centerX: 0.49, crown: 0.35, chin: 0.93, width: 0.63, dye: [1, 0.94, 0.79] },
+  chiikawa: { ears: 'round', earColor: '#faf2f5', dye: [0.98, 0.95, 0.96] },
+  hachiware: { ears: 'pointed', earColor: '#759cb5', dye: [0.98, 0.95, 0.96] },
+  usagi: { ears: 'long', earColor: '#fff0c9', dye: [1, 0.94, 0.79] },
 };
 
 function createProgram(gl, fragmentSource) {
@@ -149,11 +148,6 @@ export class DyeRenderer {
   constructor(canvas, features, geometry) {
     this.canvas=canvas; this.features=features; this.geometry=geometry;
     this.context=features.getContext('2d');
-    this.characterImages = Object.fromEntries(Object.keys(CHARACTER_HEADS).map(group => {
-      const image = new Image();
-      image.src = new URL(`./assets/pool-${group}.png`, import.meta.url).href;
-      return [group, image];
-    }));
     this.bodyCenters=new Float32Array(6);this.bodyAxes=new Float32Array(6);this.bodyScales=new Float32Array(3);
     const gl=canvas.getContext('webgl', { alpha:false, antialias:true, premultipliedAlpha:false });
     if (!gl) throw new Error('此浏览器未能开启 WebGL，请尝试 Chrome 或 Edge。');
@@ -268,109 +262,130 @@ export class DyeRenderer {
       for(let i=0;i<468;i++) {this.vertexData[i*2]=face[i].x;this.vertexData[i*2+1]=face[i].y;}
       gl.bindBuffer(gl.ARRAY_BUFFER,this.positions);gl.bufferData(gl.ARRAY_BUFFER,this.vertexData,gl.DYNAMIC_DRAW);
       gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-      this.useProgram(this.faceProgram,face,character ? Math.min(progress, 0.60) : progress);
+      this.useProgram(this.faceProgram,face,character ? progress * 0.89 : progress);
       this.attribute(this.faceProgram.position,this.positions);this.attribute(this.faceProgram.uv,this.uv);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.indices);
       gl.drawElements(gl.TRIANGLES,this.geometry.triangles.length,gl.UNSIGNED_SHORT,0);
       gl.disable(gl.BLEND);
     }
     for(const {landmarks:face,expressions} of visible) {
-      if(character) this.drawCharacterHead(face, progress, character, skin);
+      if(character) this.drawCharacterFeatures(face, expressions, progress, character);
       else if(group==='jokebear') this.drawJokeBear(face,expressions,progress);
       else this.drawFeatures(face,expressions,progress);
     }
   }
 
-  drawCharacterHead(face, progress, design, skin) {
+  drawCharacterFeatures(face, expressions, progress, design) {
     if (progress < 0.10) return;
     const ctx = this.context;
     const { width, height } = this.features;
     const left = face[234], right = face[454];
-    const centerX = (left.x + right.x) * width / 2;
-    const centerY = (left.y + right.y) * height / 2;
     const dx = (right.x - left.x) * width, dy = (right.y - left.y) * height;
     const faceWidth = Math.hypot(dx, dy);
     if (faceWidth < 2) return;
-    const cosine = dx / faceWidth, sine = dy / faceWidth;
-    const localY = point => -(point.x * width - centerX) * sine + (point.y * height - centerY) * cosine;
-    const forehead = localY(face[10]), jaw = localY(face[152]);
-    const faceHeight = Math.max(faceWidth * 0.75, jaw - forehead);
-    const image = this.characterImages[this.group];
-    const reveal = Math.max(0, Math.min(1, (progress - 0.43) / 0.55));
+    const angle = Math.atan2(dy, dx);
+    const grow = (start, end) => {
+      const u = Math.max(0, Math.min(1, (progress - start) / (end - start)));
+      return u * u * (3 - 2 * u);
+    };
+    const at = (a, b = a) => {
+      ctx.translate((face[a].x + face[b].x) * width / 2, (face[a].y + face[b].y) * height / 2);
+      ctx.rotate(angle);
+      ctx.scale(faceWidth, faceWidth);
+    };
+    const ink = '#493026';
+    const ellipse = (x, y, rx, ry, rotation, color) => {
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, rotation, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
 
-    if (reveal < 1) {
-      const blush = Math.min(1, (progress - 0.10) / 0.16);
-      for (const point of [face[50], face[280]]) {
+    const blush = grow(.10, .29);
+    for (const cheek of [50, 280]) {
+      ctx.save();
+      at(cheek);
+      ctx.scale(blush, blush);
+      ellipse(0, 0, .084, .055, 0, '#f3a6b7');
+      ctx.strokeStyle = ink;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = .011;
+      ctx.beginPath();
+      for (const x of [-.034, 0, .034]) {
+        ctx.moveTo(x - .009, .014);
+        ctx.lineTo(x + .009, -.014);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const eyes = grow(.57, .85);
+    if (eyes > 0) {
+      for (const [a, b, blinkName] of [[33, 133, 'eyeBlinkLeft'], [362, 263, 'eyeBlinkRight']]) {
+        const blink = expressions.find(item => item.categoryName === blinkName)?.score || 0;
         ctx.save();
-        ctx.translate(point.x * width, point.y * height);
-        ctx.rotate(Math.atan2(dy, dx));
-        const r = faceWidth * 0.10 * blush;
-        ctx.fillStyle = '#f3a6b7';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, r, r * 0.66, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#493026';
-        ctx.lineWidth = r * 0.15;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        for (const offset of [-0.43, 0, 0.43]) {
-          ctx.moveTo(r * (offset - 0.11), r * 0.23);
-          ctx.lineTo(r * (offset + 0.11), -r * 0.23);
-        }
-        ctx.stroke();
+        at(a, b);
+        ctx.scale(eyes, eyes * Math.max(.18, 1 - blink * .9));
+        ellipse(0, 0, .063, .065, 0, ink);
+        ellipse(-.012, -.018, .022, .019, 0, '#fff9f5');
+        ellipse(.008, .030, .019, .007, 0, '#fff9f5');
         ctx.restore();
       }
     }
-    if (!reveal || !image.naturalWidth) return;
 
-    // Estimate the full head from landmarks and expand around nearby segmented hair.
-    const bottom = jaw + faceHeight * 0.10;
-    const ovalHeight = design.chin - design.crown;
-    const ovalRadius = design.width * 0.44;
-    let size = Math.max(faceWidth * 1.58 / design.width, (bottom - forehead + faceHeight * 0.54) / ovalHeight);
-    if (skin) {
-      const radius = Math.max(faceWidth, faceHeight) * 1.55;
-      const minX = Math.max(0, Math.floor((centerX - radius) * skin.width / width));
-      const maxX = Math.min(skin.width, Math.ceil((centerX + radius) * skin.width / width));
-      const minY = Math.max(0, Math.floor((centerY - radius) * skin.height / height));
-      const maxY = Math.min(skin.height, Math.ceil((centerY + radius) * skin.height / height));
-      for (let y = minY; y < maxY; y += 2) {
-        for (let x = minX; x < maxX; x += 2) {
-          if (skin.data[y * skin.width + x] !== 1) continue; // Hair class.
-          const px = (x + 0.5) * width / skin.width - centerX;
-          const py = (y + 0.5) * height / skin.height - centerY;
-          const u = px * cosine + py * sine;
-          const v = -px * sine + py * cosine;
-          if (Math.abs(u) > faceWidth * 0.93 || v < forehead - faceHeight * 0.86 || v > jaw) continue;
-          // Calculate the minimum scale for this hair pixel to sit inside
-          // the opaque oval, with the lower edge still anchored at the jaw.
-          const depth = Math.max(faceHeight * 0.10, bottom - v + faceHeight * 0.07);
-          const across = (Math.abs(u) + faceWidth * 0.08) / ovalRadius;
-          size = Math.max(size, depth / ovalHeight + ovalHeight * across * across / (4 * depth));
-        }
-      }
-    }
-    const x = -size * design.centerX;
-    const y = bottom - size * design.chin;
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate(Math.atan2(dy, dx));
-    if (reveal < 1) {
-      // Reveal one continuous mask from the jaw upward. Its ears are reached
-      // from the roots, so features cannot appear as floating circular pieces.
-      const eased = reveal * reveal * (3 - 2 * reveal);
-      const edge = y + size * (design.chin - (design.chin + 0.06) * eased);
-      const curvature = size * 0.10 * Math.sin(Math.PI * reveal);
+    const mouth = grow(.66, .92);
+    if (mouth > 0) {
+      ctx.save();
+      at(61, 291);
+      ctx.scale(mouth, mouth);
+      ctx.strokeStyle = ink;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = .016;
       ctx.beginPath();
-      ctx.moveTo(x, edge);
-      ctx.quadraticCurveTo(x + size * 0.5, edge - curvature, x + size, edge);
-      ctx.lineTo(x + size, y + size);
-      ctx.lineTo(x, y + size);
-      ctx.closePath();
-      ctx.clip();
+      ctx.moveTo(-.077, -.014);
+      ctx.quadraticCurveTo(-.071, .048, 0, .008);
+      ctx.quadraticCurveTo(.071, .048, .077, -.014);
+      ctx.moveTo(0, -.027);
+      ctx.lineTo(0, .008);
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.drawImage(image, x, y, size, size);
-    ctx.restore();
+
+    const ears = grow(.73, 1);
+    if (ears > 0) {
+      ctx.save();
+      at(10);
+      const separation = design.ears === 'long' ? .11 : .28;
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.translate(side * separation, -.036);
+        ctx.scale(ears, ears);
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = .020;
+        ctx.lineJoin = 'round';
+        if (design.ears === 'pointed') {
+          ctx.beginPath();
+          ctx.moveTo(-.103, .026);
+          ctx.quadraticCurveTo(-.081, -.065, side * .069, -.157);
+          ctx.quadraticCurveTo(.105, -.084, .103, .026);
+          ctx.quadraticCurveTo(0, .069, -.103, .026);
+          ctx.fillStyle = design.earColor;
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          const long = design.ears === 'long';
+          ctx.rotate(long ? -.27 + side * .08 : side * .14);
+          ctx.beginPath();
+          ctx.ellipse(0, long ? -.15 : -.052, long ? .059 : .081, long ? .184 : .077, 0, 0, 2 * Math.PI);
+          ctx.fillStyle = design.earColor;
+          ctx.fill();
+          ctx.stroke();
+          if (long) ellipse(0, -.16, .031, .122, 0, '#f4adbe');
+        }
+        ctx.restore();
+      }
+      ctx.restore();
+    }
   }
 
   drawJokeBear(face,expressions,progress) {

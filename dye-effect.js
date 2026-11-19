@@ -1,4 +1,4 @@
-import { CHARACTER_HEADS, DyeRenderer } from './dye-renderer.js?v=character-heads-2';
+import { CHARACTER_HEADS, DyeRenderer } from './dye-renderer.js?v=character-features-3';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
@@ -84,7 +84,7 @@ export class DyeEffect {
       const height=Math.round(width*this.video.videoHeight/this.video.videoWidth);
       createImageBitmap(this.video,{resizeWidth:width,resizeHeight:height}).then(bitmap=>{
         if(generation!==this.generation||!this.worker) {bitmap.close();return;}
-        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:Boolean(this.label)},[bitmap]);
+        this.worker.postMessage({type:'frame',bitmap,timestamp:time,segment:this.group==='nailong'||this.group==='jokebear'},[bitmap]);
       }).catch(()=>{if(generation===this.generation) this.busy=false;});
     }
     this.schedule();
