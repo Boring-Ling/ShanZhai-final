@@ -63,13 +63,16 @@ void main() {
 
 const faceFragment = sharedFragment + `
 uniform float blueBangs;
+uniform float characterHead;
 float featureHole(vec4 feature) {
   return 1.0 - smoothstep(0.74, 1.08, length((faceUV - feature.xy) / feature.zw));
 }
 void main() {
   float faceSkin = texture2D(skinTexture, videoUV).g;
   float dye = spread(faceUV, min(progress / 0.88, 1.0));
-  dye *= faceSkin * faceVisible * step(0.001, progress);
+  // The mesh already follows the face. Relying on skin classification here
+  // cuts holes around glasses and shadows in the new masks.
+  dye *= mix(faceSkin, 1.0, characterHead) * faceVisible * step(0.001, progress);
   float holes = max(max(featureHole(leftEye), featureHole(rightEye)), featureHole(mouth));
   dye *= 1.0 - holes * (1.0 - smoothstep(0.70, 0.94, progress));
   float hairline = 0.69 + 0.18 * exp(-24.0 * abs(faceUV.x - 0.5));
@@ -96,7 +99,7 @@ function createProgram(gl, fragmentSource) {
   gl.linkProgram(program); shaders.forEach(shader => gl.deleteShader(shader));
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
   const uniforms = {};
-  for (const name of ['cameraTexture', 'skinTexture', 'growthTexture', 'dyeColor', 'progress', 'faceVisible', 'faceCenter', 'faceAxis', 'faceScale', 'frameAspect', 'leftEye', 'rightEye', 'mouth', 'blueBangs']) uniforms[name] = gl.getUniformLocation(program, name);
+  for (const name of ['cameraTexture', 'skinTexture', 'growthTexture', 'dyeColor', 'progress', 'faceVisible', 'faceCenter', 'faceAxis', 'faceScale', 'frameAspect', 'leftEye', 'rightEye', 'mouth', 'blueBangs', 'characterHead']) uniforms[name] = gl.getUniformLocation(program, name);
   for (const name of ['bodyFaceCenters','bodyFaceAxes','bodyFaceScales']) uniforms[name]=gl.getUniformLocation(program,name+'[0]');
   uniforms.bodyFaceCount=gl.getUniformLocation(program,'bodyFaceCount');
   return { program, uniforms, position: gl.getAttribLocation(program, 'position'), uv: gl.getAttribLocation(program, 'uv') };
@@ -198,6 +201,7 @@ export class DyeRenderer {
     else if(this.group==='jokebear') gl.uniform3f(u.dyeColor,1,1,1);
     else gl.uniform3f(u.dyeColor,1.0,0.91,0.27);
     if (u.blueBangs) gl.uniform1f(u.blueBangs, this.group === 'hachiware' ? 1 : 0);
+    if (u.characterHead) gl.uniform1f(u.characterHead, character ? 1 : 0);
     const aspect=this.canvas.width/this.canvas.height;
     gl.uniform1f(u.frameAspect,aspect);
     if(face) {
@@ -292,7 +296,7 @@ export class DyeRenderer {
     const forehead = localY(face[10]), jaw = localY(face[152]);
     const faceHeight = Math.max(faceWidth * 0.75, jaw - forehead);
     const image = this.characterImages[this.group];
-    const reveal = Math.max(0, Math.min(1, (progress - 0.39) / 0.59));
+    const reveal = Math.max(0, Math.min(1, (progress - 0.43) / 0.55));
 
     if (reveal < 1) {
       const blush = Math.min(1, (progress - 0.10) / 0.16);
@@ -352,15 +356,17 @@ export class DyeRenderer {
     ctx.translate(centerX, centerY);
     ctx.rotate(Math.atan2(dy, dx));
     if (reveal < 1) {
-      // Opaque patches merge into the full sticker, including hair and ears.
+      // Reveal one continuous mask from the jaw upward. Its ears are reached
+      // from the roots, so features cannot appear as floating circular pieces.
+      const eased = reveal * reveal * (3 - 2 * reveal);
+      const edge = y + size * (design.chin - (design.chin + 0.06) * eased);
+      const curvature = size * 0.10 * Math.sin(Math.PI * reveal);
       ctx.beginPath();
-      for (const [px, py, delay] of [[.28,.62,0],[.72,.61,.07],[.50,.70,.18],[.51,.35,.24]]) {
-        const radius = size * Math.max(0, reveal - delay) * 0.73;
-        if (!radius) continue;
-        const cx = x + px * size, cy = y + py * size;
-        ctx.moveTo(cx + radius, cy);
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      }
+      ctx.moveTo(x, edge);
+      ctx.quadraticCurveTo(x + size * 0.5, edge - curvature, x + size, edge);
+      ctx.lineTo(x + size, y + size);
+      ctx.lineTo(x, y + size);
+      ctx.closePath();
       ctx.clip();
     }
     ctx.drawImage(image, x, y, size, size);

@@ -1,4 +1,4 @@
-import { CHARACTER_HEADS, DyeRenderer } from './dye-renderer.js?v=character-heads-1';
+import { CHARACTER_HEADS, DyeRenderer } from './dye-renderer.js?v=character-heads-2';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
