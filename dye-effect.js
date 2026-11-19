@@ -3,6 +3,7 @@ import { DyeRenderer } from './dye-renderer.js?v=character-art-5';
 
 // Each accepted video switch adds one step. Time alone never advances the dye.
 const TOTAL_STEPS = 24;
+const CHIIKAWA_STEPS = 12;
 
 export class DyeEffect {
   constructor(video,canvas,features,onStatus) {
@@ -93,7 +94,8 @@ export class DyeEffect {
   }
 
   setProgress(steps) {
-    this.target=Math.min(1,Math.max(0,steps/TOTAL_STEPS));
+    const totalSteps = CHARACTER_FACES[this.group] ? CHIIKAWA_STEPS : TOTAL_STEPS;
+    this.target=Math.min(1,Math.max(0,steps/totalSteps));
     if(!steps) {this.shown=0;this.canvas.hidden=true;this.features.hidden=true;}
   }
 

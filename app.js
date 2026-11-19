@@ -1,4 +1,4 @@
-import { DyeEffect } from './dye-effect.js?v=character-art-5';
+import { DyeEffect } from './dye-effect.js?v=character-pace-1';
 
 const $ = (id) => document.getElementById(id);
 const pools = {
